@@ -26249,10 +26249,11 @@ void main(void)\r
 
   // src/models/ReelModel.ts
   var ReelModel = class {
-    constructor(symbolsNumber, selectedSymbolIndex) {
+    constructor(symbolsNumber, selectedSymbolIndex, spins) {
       this.symbolsNumber = symbolsNumber;
       this.selectedSymbolIndex = selectedSymbolIndex;
       this.texts = [];
+      this.spins = spins;
       for (let i2 = 0; i2 < symbolsNumber; i2++) {
         this.texts.push("row_" + i2);
       }
@@ -26266,48 +26267,8 @@ void main(void)\r
     getSelectedSymbolIndex() {
       return this.selectedSymbolIndex;
     }
-  };
-
-  // src/views/ReelView.ts
-  var ReelView = class {
-    constructor(app2, SYMBOL_SIZE, model2) {
-      this.app = app2;
-      this.SYMBOL_SIZE = SYMBOL_SIZE;
-      this.model = model2;
-      this.reel = new Container();
-      this.reelContainer1 = new Container();
-      this.reelContainer2 = new Container();
-      this.reelContainer2.y = this.reelContainer1.y - SYMBOL_SIZE * this.model.getSymbolsNumber();
-      this.reel.addChild(this.reelContainer1);
-      this.reel.addChild(this.reelContainer2);
-      this.style = new TextStyle({
-        fontFamily: "Arial",
-        fontSize: 36,
-        fill: "white"
-      });
-      this.createReel();
-    }
-    createReel() {
-      this.reel.x = (this.app.screen.width - this.SYMBOL_SIZE) / 2;
-      this.reel.y = (this.app.screen.height - this.SYMBOL_SIZE * 3) / 2;
-      const mask = new Graphics();
-      mask.beginFill(16724736);
-      mask.drawRect(this.reel.x, this.reel.y, this.SYMBOL_SIZE, this.SYMBOL_SIZE * 3);
-      mask.endFill();
-      this.reel.mask = mask;
-      this.app.stage.addChild(this.reel);
-      this.app.stage.addChild(mask);
-    }
-    addSymbolsToReel(container, texts) {
-      for (let i2 = 0; i2 < texts.length; i2++) {
-        const symbol = new Text(texts[i2], this.style);
-        symbol.x = (this.SYMBOL_SIZE - symbol.width) / 2;
-        symbol.y = i2 * this.SYMBOL_SIZE;
-        container.addChild(symbol);
-      }
-    }
-    getReelPosition() {
-      return this.reel.y;
+    getSpins() {
+      return this.spins;
     }
   };
 
@@ -30572,6 +30533,85 @@ void main(void)\r
   var gsapWithCSS = gsap.registerPlugin(CSSPlugin) || gsap;
   var TweenMaxWithCSS = gsapWithCSS.core.Tween;
 
+  // src/views/ReelView.ts
+  var ReelView = class {
+    constructor(app2, SYMBOL_SIZE) {
+      this.app = app2;
+      this.running = false;
+      this.SYMBOL_SIZE = SYMBOL_SIZE;
+      this.reel = new Container();
+      this.reelContainer1 = new Container();
+      this.reelContainer2 = new Container();
+      this.reel.addChild(this.reelContainer1);
+      this.reel.addChild(this.reelContainer2);
+      this.symbolsStyle = new TextStyle({
+        fontFamily: "Arial",
+        fontSize: 36,
+        fill: "white"
+      });
+      this.playButtonStyle = new TextStyle({
+        fontFamily: "Arial",
+        fontSize: 24,
+        fill: "yellow"
+      });
+      this.createReel();
+    }
+    createReel() {
+      this.reel.x = (this.app.screen.width - this.SYMBOL_SIZE) / 2;
+      this.reel.y = (this.app.screen.height - this.SYMBOL_SIZE * 3) / 2;
+      const mask = new Graphics();
+      mask.beginFill(16724736);
+      mask.drawRect(this.reel.x, this.reel.y, this.SYMBOL_SIZE, this.SYMBOL_SIZE * 3);
+      mask.endFill();
+      this.reel.mask = mask;
+      this.app.stage.addChild(this.reel);
+      this.app.stage.addChild(mask);
+    }
+    addSymbolsToReel(container, texts) {
+      for (let i2 = 0; i2 < texts.length; i2++) {
+        const symbol = new Text(texts[i2], this.symbolsStyle);
+        symbol.x = (this.SYMBOL_SIZE - symbol.width) / 2;
+        symbol.y = i2 * this.SYMBOL_SIZE;
+        container.addChild(symbol);
+      }
+    }
+    setReelY(reelContainer, symbolsNumber) {
+      reelContainer.y = this.reelContainer1.y - this.SYMBOL_SIZE * symbolsNumber;
+    }
+    addPlayButton(symbolsNumber, onClick) {
+      const playText = new Text("Click to Spin!", this.playButtonStyle);
+      playText.x = (this.app.screen.width - playText.width) / 2;
+      playText.y = this.app.screen.height - playText.height - symbolsNumber;
+      playText.interactive = true;
+      playText.buttonMode = true;
+      playText.on("pointerdown", onClick);
+      this.app.stage.addChild(playText);
+    }
+    animateReel(targetY, onUpdate, onComplete) {
+      gsapWithCSS.to(this.reel, {
+        duration: 10,
+        y: targetY,
+        ease: "back.out(0.5)",
+        onUpdate,
+        onComplete
+      });
+    }
+    updateContainersPosition(symbolsNumber) {
+      if (this.reelContainer1.y + this.getReelPosition() >= this.app.screen.height) {
+        this.reelContainer1.y = this.reelContainer2.y - this.SYMBOL_SIZE * symbolsNumber;
+      }
+      if (this.reelContainer2.y + this.getReelPosition() >= this.app.screen.height) {
+        this.reelContainer2.y = this.reelContainer1.y - this.SYMBOL_SIZE * symbolsNumber;
+      }
+    }
+    getReelPosition() {
+      return this.reel.y;
+    }
+    setSpins(spins) {
+      this.spins = spins;
+    }
+  };
+
   // src/controllers/ReelController.ts
   var ReelController = class {
     constructor(model2, view2) {
@@ -30579,50 +30619,33 @@ void main(void)\r
       this.view = view2;
       this.running = false;
       this.initReel();
+      this.initPlayButton();
+      this.setSpins();
     }
     initReel() {
       this.view.addSymbolsToReel(this.view.reelContainer1, this.model.getTexts());
       this.view.addSymbolsToReel(this.view.reelContainer2, this.model.getTexts());
-      this.startGame();
+      this.view.setReelY(this.view.reelContainer2, this.model.getSymbolsNumber());
     }
-    startGame() {
-      const playTextStyle = new TextStyle({
-        fontFamily: "Arial",
-        fontSize: 24,
-        fill: "yellow"
-      });
-      const playText = new Text("Click to Spin!", playTextStyle);
-      playText.x = (this.view.app.screen.width - playText.width) / 2;
-      playText.y = this.view.app.screen.height - playText.height - this.model.symbolsNumber;
-      playText.interactive = true;
-      playText.buttonMode = true;
-      playText.on("pointerdown", () => this.startPlay());
-      this.view.app.stage.addChild(playText);
+    initPlayButton() {
+      this.view.addPlayButton(this.model.getSymbolsNumber(), () => this.startPlay());
+    }
+    setSpins() {
+      this.view.setSpins(this.model.getSpins());
     }
     startPlay() {
       if (this.running)
         return;
       this.running = true;
-      const spins = 4;
+      const spins = this.model.getSpins();
       const totalDistance = this.view.SYMBOL_SIZE * this.model.symbolsNumber * spins;
       const targetY = totalDistance + this.view.getReelPosition() + this.view.SYMBOL_SIZE * (this.model.symbolsNumber - this.model.getSelectedSymbolIndex()) + this.view.SYMBOL_SIZE;
-      gsapWithCSS.to(this.view.reel, {
-        duration: 10,
-        y: targetY,
-        ease: "back.out(0.5)",
-        onUpdate: () => this.updateContainersPosition(),
-        onComplete: () => {
-          this.running = false;
-        }
+      this.view.animateReel(targetY, () => this.updateContainersPosition(), () => {
+        this.running = false;
       });
     }
     updateContainersPosition() {
-      if (this.view.reelContainer1.y + this.view.getReelPosition() >= this.view.app.screen.height) {
-        this.view.reelContainer1.y = this.view.reelContainer2.y - this.view.SYMBOL_SIZE * this.model.symbolsNumber;
-      }
-      if (this.view.reelContainer2.y + this.view.getReelPosition() >= this.view.app.screen.height) {
-        this.view.reelContainer2.y = this.view.reelContainer1.y - this.view.SYMBOL_SIZE * this.model.symbolsNumber;
-      }
+      this.view.updateContainersPosition(this.model.getSymbolsNumber());
     }
   };
 
@@ -30630,8 +30653,8 @@ void main(void)\r
   var app = new Application({ width: 600, height: 400 });
   document.body.appendChild(app.view);
   globalThis.__PIXI_APP__ = app;
-  var model = new ReelModel(10, 9);
-  var view = new ReelView(app, 100, model);
+  var model = new ReelModel(10, 9, 4);
+  var view = new ReelView(app, 100);
   var controller = new ReelController(model, view);
 })();
 /*! Bundled license information:
